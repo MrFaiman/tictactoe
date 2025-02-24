@@ -1,56 +1,29 @@
-from socket import socket
-import struct
+import socket
 
-PORT = 12345
+class Actions:
+    MOVE: int = 1
+    PLAY_AGAIN: int = 2
+    VALID_ACTIONS: set[int] = {MOVE, PLAY_AGAIN}
+    
+class Protocol:
+    @staticmethod
+    def pack(action: int, argument: int) -> bytes:
+        """Pack the action and argument into a 2-byte message."""
+        return bytes([action, argument])
 
-LENGTH_FIELD_SIZE = 4
-ACTION_FIELD_SIZE = 1
-
-class Status:
-	OK = "OK"
-	ERROR = "ERROR"
-	NOT_FOUND = "NOT_FOUND"
-
-class Action:
-	CONNECT = 1
-	DISCONNECT = 2
-	LOBBY_LIST = 3
-	CREATE_LOBBY = 4
-	JOIN_LOBBY = 5
-	START_GAME = 6
-
-def unpack(sock: socket):
-	# Receive the action (1 byte)
-	action_data = sock.recv(ACTION_FIELD_SIZE)
-	if not action_data:
-		return -1, ""
-	action = struct.unpack('!B', action_data)[0]
-	
-	# Receive the length of the args (4 bytes)
-	length_data = sock.recv(LENGTH_FIELD_SIZE)
-	if not length_data:
-		return -1, ""
-	data_len = struct.unpack('!I', length_data)[0]
-	
-	# Receive the args
-	if data_len == 0:
-		return action, ""
-	arg = sock.recv(data_len).decode()
-	
-	return action, arg
-
-def pack(action: int = 0, arg: str = "") -> bytes:
-	# Pack the action (1 byte)
-	action_data = struct.pack('!B', action)
-	
-	# Pack the length of the args (4 bytes)
-	arg = str(arg)
-	data_len = len(arg)
-	length_data = struct.pack('!I', data_len)
-	
-	# Pack the args
-	arg_data = arg.encode()
-	
-	# Combine all parts
-	packet = action_data + length_data + arg_data
-	return packet
+    @staticmethod
+    def unpack(sock: socket.socket) -> tuple[int, int]:
+        """Unpack a 2-byte message from the socket into action and argument."""
+        data = sock.recv(2)
+        if len(data) != 2:
+            raise ValueError("Incomplete packet received")
+        
+        action, argument = data[0], data[1]
+        
+        if action not in Actions.VALID_ACTIONS:
+            raise ValueError(f"Invalid action received: {action}")
+        
+        if action == Actions.MOVE and not (0 <= argument <= 8):
+            raise ValueError(f"Invalid argument received: {argument}")
+        
+        return action, argument

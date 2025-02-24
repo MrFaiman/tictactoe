@@ -1,115 +1,98 @@
 import socket
-import threading
-from protocol import Action, Status
-import protocol
+from protocol import Protocol, Actions
+from tictactoe import TicTacToe
 
-class ClientState:
-	CONNECTED = 1
-	LOBBY = 2
-	GAME = 3
+class Client:
+    def __init__(self, host: str, port: int, player_symbol: str) -> None:
+        self.sock: socket.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connect_to_host(host, port)
+        self.game: TicTacToe = TicTacToe()
+        self.player_symbol: str = player_symbol
 
-class GameClient:
-	def __init__(self, host: str, port: int):
-		self.host = host
-		self.port = port
-		try:
-			self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		except socket.error as e:
-			print(f"Error creating socket: {e}")
-			return
-		
-		self.connect()
-		
-	def connect(self):
-		try:
-			self.client.connect((self.host, self.port))
-		except socket.error as e:
-			print(f"Error connecting to server: {e}")
-			return
-		
-		print(f"Connected to {self.host}:{self.port}")
-		
-		self.get_lobbies()
-		self.state = ClientState.CONNECTED
+    def connect_to_host(self, host: str, port: int) -> None:
+        while True:
+            try:
+                self.sock.connect((host, port))
+                break
+            except (socket.error, socket.gaierror) as e:
+                print(f"Error connecting to host: {e}")
+                host = input("Enter a valid host IP: ")
+                port = int(input("Enter a valid host port: "))
 
-	def get_lobbies(self):
-		print("Getting lobbies...")
-		self.client.sendall(protocol.pack(Action.LOBBY_LIST))
-		action, resp = protocol.unpack(self.client)
-		if action == Action.LOBBY_LIST:
-			print(resp)
-		else:
-			print("Unexpected response.")
+    def send(self, action: int, argument: int) -> None:
+        message = Protocol.pack(action, argument)
+        self.sock.sendall(message)
 
-	def create_lobby(self):
-		print("Creating lobby...")
-		self.client.sendall(protocol.pack(Action.CREATE_LOBBY))
-		action, resp = protocol.unpack(self.client)
-		if action == Action.CREATE_LOBBY:
-			print(f"Lobby code: {resp}")
-			self.join_lobby(resp)
-		else:
-			print("Unexpected response.")
+    def receive(self) -> tuple[int, int]:
+        return Protocol.unpack(self.sock)
 
-	def join_lobby(self, code: str):
-		print(f"Joining lobby {code}...")
-		self.client.sendall(protocol.pack(Action.JOIN_LOBBY, code))
-		action, resp = protocol.unpack(self.client)
-		if action == Action.JOIN_LOBBY:
-			self.state = ClientState.LOBBY
-			print(resp)
-			threading.Thread(target=self.wait_for_start_game).start()
-		else:
-			print("Unexpected response.")
+    def play(self) -> None:
+        while True:
+            self.game.print_board()
+            if self.game.current_player == self.player_symbol:
+                position = int(input(f"Your move ({self.player_symbol}) (1-9): ")) - 1
+                if self.game.make_move(position):
+                    self.send(Actions.MOVE, position)
+                else:
+                    print("Invalid move. Try again.")
+            else:
+                print(f"Waiting for opponent's move ({'O' if self.player_symbol == 'X' else 'X'})...")
+                try:
+                    action, position = self.receive()
+                    if action == Actions.MOVE:
+                        self.game.make_move(position)
+                except ValueError as e:
+                    print(f"Error: {e}")
+                    continue
+            winner = self.game.check_winner()
+            if winner:
+                self.game.print_board()
+                if winner == 'Draw':
+                    print("It's a draw!")
+                else:
+                    print(f"{winner} wins!")
+                break
 
-	def wait_for_start_game(self):
-		print("Waiting for game to start...")
-		while True:
-			action, resp = protocol.unpack(self.client)
-			print(action, resp)
-			if action == Action.START_GAME and resp == Status.OK:
-				self.state = ClientState.GAME
-				print("Game started!")
-				break
+        self.ask_play_again()
 
-	def start_game(self):
-		print("Starting game...")
-		self.client.sendall(protocol.pack(Action.START_GAME))
-		action, resp = protocol.unpack(self.client)
-		if action == Action.START_GAME:
-			self.state = ClientState.GAME
-			print(resp)
-		else:
-			print("Unexpected response.")
+    def ask_play_again(self) -> None:
+        play_again = input("Do you want to play again? (y/n): ").lower() == 'y'
+        self.send(Actions.PLAY_AGAIN, int(play_again))
+        if play_again:
+            print("Waiting for opponent's decision...")
+            action, response = self.receive()
+            if action == Actions.PLAY_AGAIN and response == 1:
+                print("Opponent agreed to play again!")
+                self.game.reset()
+                self.play()
+            else:
+                print("Opponent declined to play again.")
+        else:
+            print("You declined to play again.")
 
-	def disconnect(self):
-		print("Disconnecting...")
-		self.client.sendall(protocol.pack(Action.EXIT))
-		self.client.close()
+class Host(Client):
+    def __init__(self, port: int) -> None:
+        self.sock: socket.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.bind_to_port(port)
+        self.sock.listen(1)
+        print("Waiting for a connection...")
+        self.connection, _ = self.sock.accept()
+        print("Opponent connected!")
+        self.game: TicTacToe = TicTacToe()
+        self.player_symbol: str = 'X'  # Host always starts as 'X'
 
-def main():
-	print("Starting client...")
-	client = GameClient("127.0.0.1", protocol.PORT)
-	
-	while True:
-		command = input("TicTacToe > ")
+    def bind_to_port(self, port: int) -> None:
+        while True:
+            try:
+                self.sock.bind(('0.0.0.0', port))
+                break
+            except socket.error as e:
+                print(f"Error binding to port: {e}")
+                port = int(input("Enter a different port to host on: "))
 
-		args = command.split(" ")
-		
-		match args[0]:
-			case "exit":
-				client.disconnect()
-				break
-			case "lobbies":
-				client.get_lobbies()
-			case "create":
-				client.create_lobby()
-			case "join":
-				client.join_lobby(args[1])
-			case _:
-				print("Invalid command.")
-		# client.client.recv(1024)
+    def send(self, action: int, argument: int) -> None:
+        message = Protocol.pack(action, argument)
+        self.connection.sendall(message)
 
-
-if __name__ == "__main__":
-	main()
+    def receive(self) -> tuple[int, int]:
+        return Protocol.unpack(self.connection)

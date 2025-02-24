@@ -1,9 +1,0 @@
-2025-02-18 20:52:49,425 - Server - INFO - Server listening on 0.0.0.0:12345
-2025-02-18 20:53:11,922 - Server - INFO - Connection from: ('127.0.0.1', 50732)
-2025-02-18 20:53:11,922 - Server - INFO - Client ('127.0.0.1', 50732) connected.
-2025-02-18 20:53:24,729 - Server - INFO - Creating lobby...
-2025-02-18 20:53:24,729 - Server - INFO - Added client to lobby 5PSG (1/2)
-2025-02-18 20:53:47,083 - Server - INFO - Connection from: ('127.0.0.1', 42604)
-2025-02-18 20:53:47,084 - Server - INFO - Client ('127.0.0.1', 42604) connected.
-2025-02-18 20:53:53,702 - Server - INFO - Added client to lobby 5PSG (2/2)
-2025-02-18 20:53:53,702 - Server - INFO - Starting game in lobby 5PSG...
